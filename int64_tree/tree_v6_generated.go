@@ -78,19 +78,26 @@ func (t *TreeV6) addTag(tag int64, nodeIndex uint, matchFunc MatchesFunc, replac
 	}
 	return ret
 }
-
 func (t *TreeV6) tagsForNode(nodeIndex uint) []int64 {
-	if nodeIndex == 0 {
-		// useful for base cases where we haven't found anything
+	if ret := t.tagsForNodeAppend(nil, nodeIndex); ret != nil {
+		return ret
+	} else {
+		// NB: for compatibility with the old tagsForNode()
+		// old comment: useful for base cases where we haven't found anything
 		return make([]int64, 0)
+	}
+}
+
+func (t *TreeV6) tagsForNodeAppend(ret []int64, nodeIndex uint) []int64 {
+	if nodeIndex == 0 {
+		return ret
 	}
 
 	// TODO: clean up the typing in here, between uint, uint64
 	tagCount := t.nodes[nodeIndex].TagCount
-	ret := make([]int64, tagCount)
 	key := uint64(nodeIndex) << 32
 	for i := 0; i < tagCount; i++ {
-		ret[i] = t.tags[key+uint64(i)]
+		ret = append(ret, t.tags[key+uint64(i)])
 	}
 	return ret
 }
@@ -525,19 +532,29 @@ func (t *TreeV6) FindTagsWithFilter(address patricia.IPv6Address, filterFunc Fil
 	}
 }
 
-// FindTags finds all matching tags that passes the filter function
+// FindTags finds all matching tags for given address
 func (t *TreeV6) FindTags(address patricia.IPv6Address) ([]int64, error) {
+	if ret := t.FindTagsAppend(nil, address); ret != nil {
+		// NB: the nil error is for compatibility with the old FindTags()
+		return ret, nil
+	} else {
+		// NB: the alloc is for compatibility with the old FindTags()
+		return make([]int64, 0), nil
+	}
+}
+
+// FindTagsAppend finds all matching tags for given address and appends them to ret
+func (t *TreeV6) FindTagsAppend(ret []int64, address patricia.IPv6Address) []int64 {
 	var matchCount uint
 	root := &t.nodes[1]
-	ret := make([]int64, 0)
 
 	if root.TagCount > 0 {
-		ret = append(ret, t.tagsForNode(1)...)
+		ret = t.tagsForNodeAppend(ret, 1)
 	}
 
 	if address.Length == 0 {
 		// caller just looking for root tags
-		return ret, nil
+		return ret
 	}
 
 	var nodeIndex uint
@@ -552,24 +569,24 @@ func (t *TreeV6) FindTags(address patricia.IPv6Address) ([]int64, error) {
 	for {
 		count++
 		if nodeIndex == 0 {
-			return ret, nil
+			return ret
 		}
 		node := &t.nodes[nodeIndex]
 
 		matchCount = node.MatchCount(address)
 		if matchCount < node.prefixLength {
 			// didn't match the entire node - we're done
-			return ret, nil
+			return ret
 		}
 
 		// matched the full node - get its tags, then chop off the bits we've already matched and continue
 		if node.TagCount > 0 {
-			ret = append(ret, t.tagsForNode(nodeIndex)...)
+			ret = t.tagsForNodeAppend(ret, nodeIndex)
 		}
 
 		if matchCount == address.Length {
 			// exact match - we're done
-			return ret, nil
+			return ret
 		}
 
 		// there's still more address - keep traversing
